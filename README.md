@@ -1,12 +1,4 @@
-+---------------+---------------------+
-| STYLE         | BADGE               |
-+===============+=====================+
-| flat          | |Flat Badge|        |
-+---------------+---------------------+
-
-
-.. |Flat Badge| image:: https://readthedocs.org/projects/pip/badge/?version=latest&style=flat
-
+[![Documentation Status](https://readthedocs.org/projects/tezip/badge/?version=latest)](https://tezip.readthedocs.io/en/latest/?badge=latest)
 
 # TEZip
 Data data compression tool for time evolutonary data.
