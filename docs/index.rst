@@ -25,133 +25,149 @@ Indices and tables
 ==============
 本ドキュメントは、「大規模研究施設の整備・利活用のためのデータ圧縮ツール開発」（以下本件）において開発したシステムの環境構築手順及び操作手順について説明するものです。
 
-システム概要
-============
-本システムは、以下3つの機構からなります。
+TEZip overview
 
-* 学習機構
-* 圧縮機構
-* 解凍機構
+==============
 
-学習機構
-'''''''''
-`PredNet <https://coxlab.github.io/prednet/>`_ を使用して時間経過によって物体が動く変化の学習を行います。
-PredNetの学習方法に従い学習データをhkl形式に変換してから学習を行います。
-学習したモデルをファイルに出力し、圧縮機構・解凍機構で使用します。
-学習データのダウンロード・hklへの変換は別途プログラムを使用して用意します。
-詳しくは5.2で説明します。
+This system consisits of three mechanisms.
 
-圧縮機構
-''''''''''''''''''''''
-学習機構で出力したモデルを使用して、時系列画像群を推論・差分を圧縮します。
-元画像と推論結果の差分を求め、error-bounded quantization、Density-based Spatial Encoding、Partitioned Entropy Encodingの処理を施します。これらの処理は最終的に圧縮する時に圧縮率を高める効果があります。
-圧縮にはzstdライブラリを使用してバイナリファイル(.dat)に出力します。
-また、差分だけでなくキーフレーム画像もzstdを使用してバイナリファイル(.dat)に出力します。
+1. Learning mechanism
+2. Compression mechanism
+3. Decompression mechanism
 
-解凍機構
-''''''''''''''''''''''
-学習機構で出力したモデルと圧縮機構で出力したバイナリファイル(.dat)を使用して、圧縮機構に入力した画像群を復元します。
-キーフレームを入力として推論を行い、圧縮機構の推論結果を再現します。
-Density-based Spatial Decoding、Partitioned Entropy Decodingの処理を圧縮機構の逆順に施すことで、元の差分を復元します。error-bounded quantizationの処理は非可逆圧縮になるため、解凍機構には含まれません。
-推論結果と差分を足し合わせることで、元画像を復元し、出力します。
+ 
 
-動作環境
+Learning mechanism
+
+``````````````````
+
+`PredNet <https://coxlab.github.io/prednet/>`_ is used to learn the change in the movement of an object over time.
+According to the learning method of PredNet, the learning data is converted into the hkl format and then learned.
+The learned model is output to a file. This file is used by the compression mechanism and decompression mechanism.
+Use another program to download the training data and convert it to hkl.
+
+ 
+
+Compression mechanism
+
+``````````````````````
+
+Using the model output by the learning mechanism, the results of inference and difference of time series images are compressed.
+After deriving the difference between the original image and the inference result,error-bounded quantization, Density-based Spatial Encoding, and Partitioned Entropy Encoding are processed. These processes have the effect of increasing the compression rate when compressing.
+Use the zstd library to compress and output to a binary file (.dat).
+
+And,differences and keyframe images are also output to a binary file (.dat) using the zstd library.
+
+ 
+
+Decompression mechanism
+
+`````````````````````````
+
+Using the model output by the learning mechanism and the binary file (.dat) output by the compression mechanism, the image group input to the compression mechanism is restored.
+By inferring by inputting keyframes, the inference result of the compression mechanism is reproduced.
+The processing of Density-based Spatial Decoding and Partitioned Entropy Decoding is performed in the reverse order of the compression mechanism, and the original difference is restored.
+Since the error-bounded quantization process is lossy compression, it is not included in the decompression mechanism.
+The inference result and the difference are added to restore the original image and output it.
+
+Operating environment
 ========
-今回はマシンの構築にAWSのEC2を使用しました。
+In this case, we used AWS EC2 to build the machine.
 
-EC2情報
+EC2 Information
 '''''''''''
 * AMI
    CentOS 7.9.2009 x86_64 - ami-00f8e2c955f7ffa9b
-* インスタンスタイプ
+* Instance Type
    p2.xlarge
    
 マシン情報概要
 ''''''''''''''
 
-* 動作OS
+* Operating Systems
    CentOS7
 
-* 動作CPU
+* CPU
    Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz×4 
   
-* 動作GPU
+* GPU
    NVIDIA K80(12GB)
    
-* 動作メモリ
+* Memory
    64GB
 
-環境構築手順
+Environment construction procedure
 ============
 
-以下の手順で環境構築を行います
+Follow the steps below to build the environment.
 
-* NVIDIAドライバのインストール
-* CUDAのインストール
-* cuDNNのインストール
-* 仮想環境の作成
+* Install the NVIDIA driver
+* Install CUDA
+* Install cuDNN
+* Create a virtual environment
 
-NVIDIAドライバのインストール
+Install the NVIDIA driver
 '''''''''''''''''''''''''''''
-NVIDIAのGPUを使用できるようにドライバを以下の手順に従ってインストールします。
+Follow the steps below to install the driver so that you can use NVIDIA's GPU.
 
-標準ドライバの無効化
+Disable the standard driver
 ..........................
-NVIDIAドライバのインストールの邪魔をしないように標準ドライバを切る必要があります。以下のコマンドを実行してください。
+You need to turn off the standard driver so that it does not interfere with the installation of the NVIDIA driver. Please execute the following command.
 
 .. code-block:: sh
 
   lsmod | grep nouveau
   
-その後、vimなどのテキストエディタを使用して以下のディレクトリにファイルを作成してください。
+Then, use a text editor such as vim to create a file in the following directory.
 
 .. code-block:: sh
 
    /etc/modprobe.d/blacklist-nouveau.conf
 
-作成したファイルには以下を記述して保存します。
+Write the following settings in the file you created and save it.
 
 .. code-block:: sh
 
    blacklist nouveau
    options nouveau modeset=0
    
- その後再起動をして、以下のコマンドを入力します。何も表示されなければ、無効化に成功しています。
+Then reboot and run the following command. If nothing is displayed, the disabling has been successful.
 
 .. code-block:: sh
 
    lsmod | grep nouveau
    
-インストールの実行
+Running the installation
 ..........................
-NVIDIAドライバのインストールに必要なパッケージをインストールします。以下のコマンドを実行してください。
+Install the package required to install the NVIDIA driver. Execute the following command.
 
 .. code-block:: sh
 
    yum -y install kernel-devel kernel-devel-$(uname -r) kernel-header-$(uname -r) gcc gcc-c++ make
   
-次に自分のGPUデバイスの名前を確認します。以下のコマンドを実行して確認できます。
+Then, check the name of your GPU device. You can check it by running the following command.
 
 .. code-block:: sh
 
    lspci | grep -i nvidia
 
-以下の図のような`NVDIAドライバダウンロードのページ <https://www.nvidia.co.jp/Download/index.aspx?lang=jp/>`_ から自分のGPUデバイスを選択してインストールに進みます。「CUDA Toolkit」については「10.0」を選択してください。
+From the`NVDIA driver download page <https://www.nvidia.co.jp/Download/index.aspx?lang=jp/>`_ as shown in the following figure, select your GPU device and proceed to installation.For **CUDA Toolkit**, please select **10.0**.
 
 .. image:: ./img/img1.png
 
-次にダウンロードしたファイルを実行してNVIDIAドライバのインストーラを実行します。以下のコマンドは一例になります。ダウンロードしたファイル名に置き換えて実行してください。
+Next, run the downloaded file to run the NVIDIA driver installer.The following command is an example.Please replace the file name with the one you have downloaded and run it.
 
 .. code-block:: sh
 
    sh NVIDIA-Linux-x86_64-410.129-diagnostic.run
    
-インストーラの選択に対して全て「YES」を選択してインストールを実行します。
-以下の図のような画面が表示されていればインストール完了となります。
+Select "YES" for all of the installer's selections to execute the installation.
+The installation is complete when the screen shown in the following figure is displayed.
 
 .. image:: ./img/img2.png
 
-以下のコマンドを実行して、以下の図のような画面が表示されれば、正しくインストールされています。
+Execute the following command, and if the screen shown in the figure below is displayed, it has been installed correctly.
+Select "YES" for all of the installer's selections to execute the installation.
 
 .. code-block:: sh
 
@@ -159,16 +175,16 @@ NVIDIAドライバのインストールに必要なパッケージをインス�
 
 .. image:: ./img/img3.png
 
-CUDAのインストール
+Install CUDA
 '''''''''''''''''''''''''''''
 
-GPUをプログラムで使用するためにCUDAをインストールします。
-今回は、CUDA **10.0** のバージョンを使用します。
-以下の図のような`ダウンロードページ <https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=CentOS&target_version=7&target_type=rpmlocal>`_ を開き「Linux」「x86_64」「CentOS」「7」「rpm(local) または rpm(network)」を選択してインストーラのダウンロードを行ってください。
+Install CUDA to use the GPU in your programs.
+In this case, we will use the CUDA **10.0** version.
+Open`the download page <https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=CentOS&target_version=7&target_type=rpmlocal>`_ shown in the figure below and select "Linux", "x86_64", "CentOS", "7", "rpm(local)" or "rpm(network)" to download the installer.
 
 .. image:: ./img/img4.png
 
-次にダウンロードしたファイルを実行してCUDA10.0のインストーラを実行します。以下のコマンドを実行してください。
+Next, run the downloaded file to run the CUDA 10.0 installer. Please run the following command.
 
 .. code-block:: sh
 
@@ -177,14 +193,14 @@ GPUをプログラムで使用するためにCUDAをインストールします�
    yum clean all
    yum install cuda
 
-その後、以下のコマンドを実行してパスを通します。結果を反映するために、実行した後は再起動をしてください。
+Then, run the following command to pass it through. To reflect the result, please reboot after running it.
 
 .. code-block:: sh
 
    echo ' PATH=”/usr/local/cuda-10.0/bin${PATH:+:${PATH}}"' >> ~/.bashrc
    echo 'export LD_LIBRARY_PATH=”/usr/local/cuda-10.0/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"' >> ~/.bashrc
 
-再起動した後は以下のコマンドを実行してください。以下の図のような画面が表示されれば、正しくインストールされています。
+After rebooting, please execute the following command. If the screen shown in the figure below appears, the software has been installed correctly.
 
 .. code-block:: sh
 
@@ -192,17 +208,17 @@ GPUをプログラムで使用するためにCUDAをインストールします�
 
 .. image:: ./img/img5.png
 
-cuDNNのインストール
+Install cuDNN
 '''''''''''''''''''''''''''''
 
-CUDAに引き続きGPUをプログラムで使用するためにcuDNNをダウンロードします。
-なお、こちらについてはあらかじめNVIDIAアカウントを作成する必要があります。下記手順の途中でログインを要求されることがあるので未作成の場合は、そのタイミング作成してください。
-今回はcuDNN **7.6.5** のバージョンを使用します。
-以下の図のような`ダウンロードページ <https://developer.nvidia.com/rdp/cudnn-archive>`_ を開き、「Download cuDNN v7.6.5 (November 5th, 2019), for CUDA 10.0」「cuDNN Library for Linux」を選択してダウンロードしてください。
+Following CUDA, we will download cuDNN to use GPU in our programs.
+You will need to create an NVIDIA account in advance. You may be asked to log in during the following procedure, so if you haven't created one, please do so at that time.
+This time, we will use cuDNN **7.6.5** version.
+Go to`the download page <https://developer.nvidia.com/rdp/cudnn-archive>`_ shown in the figure below and select "Download cuDNN v7.6.5 (November 5th, 2019), for CUDA 10.0" and "cuDNN Library for Linux" to download.
 
 .. image:: ./img/img6.png
 
-ダウンロードが完了したら、解凍してファイルを適当な場所に配置します。以下のコマンドを実行してください。
+After the download is complete, unzip the file and place it in an appropriate location. Execute the following command.
 
 .. code-block:: sh
 
@@ -211,16 +227,17 @@ CUDAに引き続きGPUをプログラムで使用するためにcuDNNをダウ�
    sudo cp -a cuda/lib64/* /usr/local/cuda/lib64/
    sudo ldconfig
 
-仮想環境の作成
+Create a virtual environment
 '''''''''''''''''''''''''''''
 
-Python環境を切り分け、管理しやすくするため、仮想環境を使用します。
-今回は「pyenv」を使用して、その中に「anaconda」をインストールして使用します。
+To separate the Python environment and make it easier to manage, we will use a virtual environment.
+In this case, we will use "pyenv". We will install and use "anaconda" in it.
 
-pyenvのインストール
+
+Install pyenv
 ..........................
 
-pyenvをインストールして「pyenv」コマンドを有効にします。以下のコマンドを実行した後、再起動をしてください。
+Install pyenv and enable the "pyenv" command. Execute the following command and then reboot.
 
 .. code-block:: sh
 
@@ -228,46 +245,46 @@ pyenvをインストールして「pyenv」コマンドを有効にします。�
    echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
    echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
 
-pyenvを使用する場合は、pipを使用してライブラリをインストールします。その際にzipファイルの解凍を行う場合があるため、zipコマンドがない場合はインストールしておく必要があります。以下のコマンドを実行してインストールできます。
+If you are using pyenv, use pip to install the library. This may involve unzipping the zip file, so if you do not have the zip command, you will need to install it. You can install it by running the following command
 
 .. code-block:: sh
 
    yum -y install zip unzip bzip2
    
-anacondaのインストール
+Install anaconda
 ..........................
 
-pyenvの中にanacondaをインストールして仮想環境を作成します。「pyenv install -l」でインストールできる環境の一覧を表示できます。今回は「anaconda3-4.3.1」を使用します。仮想環境作成のコマンドは以下になります。
+Install anaconda in pyenv to create a virtual environment. You can run the command "pyenv install -l" to see a list of environments that can be installed. This time, we will use "anaconda3-4.3.1". The command to create a virtual environment is as shown below.
 
 .. code-block:: sh
 
    eval "$(pyenv init -)"
    pyenv install anaconda3-4.3.1
 
-その後、以下のコマンドで仮想環境に入ります。
+After that, you can enter the virtual environment by executing the following command.
 
 .. code-block:: sh
 
    pyenv rehash
    pyenv global anaconda3-4.3.1
 
-以下のバージョンを確認するコマンドを実行して、以下の表示が確認できれば仮想環境に入れています。
+Run the following command to check the version, and if you see the following message, you have entered the virtual environment.
 
 .. code-block:: sh
 
    python -V
    Python 3.6.0 :: Anaconda 4.3.1 (64-bit)
 
-必要なライブラリのインストール
+Install the required libraries
 ..........................
 
-pyenv + anacondaで環境に入った後は、pipを使用して必要なライブラリをインストールします。まずは以下のコマンドでpipのアップデートをします。
+pyenv + anaconda で環境に入った後は、pipを使用して必要なライブラリをインストールします。まずは以下のコマンドでpipのアップデートをします。
 
 .. code-block:: sh
 
    pip install --upgrade pip
    
-次に以下のコマンドで必要なライブラリをインストールします。
+Next, run the following command to install the necessary libraries.
 
 .. code-block:: sh
 
@@ -282,7 +299,7 @@ pyenv + anacondaで環境に入った後は、pipを使用して必要なライ�
    pip install cupy-cuda100==8.4.0
    pip install numpy==1.19.5
 
-付録のKittiデータを使用した学習データ作成のサンプルプログラムを動かす場合には、以下のライブラリを追加でインストールしてください。
+If you want to run the sample program for creating training data using Kitti data in the appendix, please install the following libraries additionally.
 
 .. code-block:: sh
 
@@ -290,12 +307,12 @@ pyenv + anacondaで環境に入った後は、pipを使用して必要なライ�
    pip install bs4
    pip install imageio==2.9.0
 
-以下のコマンドを実行して以下の図のようにdevice_typeに”GPU”がある場合は、pythonプログラムからGPUを認識することに成功しています。
+If you run the following command and see "GPU" in the device_type field in the figure below, your Python program has successfully recognized the GPU.
 
 .. code-block:: sh
 
    python
-   # 以下pythonの対話モード
+   # python interactive mode below
    >>> from tensorflow.python.client import device_lib
    >>> device_lib.list_local_devices()
 
