@@ -25,149 +25,133 @@ Indices and tables
 ==============
 本ドキュメントは、「大規模研究施設の整備・利活用のためのデータ圧縮ツール開発」（以下本件）において開発したシステムの環境構築手順及び操作手順について説明するものです。
 
-TEZip overview
+システム概要
+============
+本システムは、以下3つの機構からなります。
 
-==============
+* 学習機構
+* 圧縮機構
+* 解凍機構
 
-This system consisits of three mechanisms.
+学習機構
+'''''''''
+`PredNet <https://coxlab.github.io/prednet/>`_ を使用して時間経過によって物体が動く変化の学習を行います。
+PredNetの学習方法に従い学習データをhkl形式に変換してから学習を行います。
+学習したモデルをファイルに出力し、圧縮機構・解凍機構で使用します。
+学習データのダウンロード・hklへの変換は別途プログラムを使用して用意します。
+詳しくは5.2で説明します。
 
-1. Learning mechanism
-2. Compression mechanism
-3. Decompression mechanism
+圧縮機構
+''''''''''''''''''''''
+学習機構で出力したモデルを使用して、時系列画像群を推論・差分を圧縮します。
+元画像と推論結果の差分を求め、error-bounded quantization、Density-based Spatial Encoding、Partitioned Entropy Encodingの処理を施します。これらの処理は最終的に圧縮する時に圧縮率を高める効果があります。
+圧縮にはzstdライブラリを使用してバイナリファイル(.dat)に出力します。
+また、差分だけでなくキーフレーム画像もzstdを使用してバイナリファイル(.dat)に出力します。
 
- 
+解凍機構
+''''''''''''''''''''''
+学習機構で出力したモデルと圧縮機構で出力したバイナリファイル(.dat)を使用して、圧縮機構に入力した画像群を復元します。
+キーフレームを入力として推論を行い、圧縮機構の推論結果を再現します。
+Density-based Spatial Decoding、Partitioned Entropy Decodingの処理を圧縮機構の逆順に施すことで、元の差分を復元します。error-bounded quantizationの処理は非可逆圧縮になるため、解凍機構には含まれません。
+推論結果と差分を足し合わせることで、元画像を復元し、出力します。
 
-Learning mechanism
-
-``````````````````
-
-`PredNet <https://coxlab.github.io/prednet/>`_ is used to learn the change in the movement of an object over time.
-According to the learning method of PredNet, the learning data is converted into the hkl format and then learned.
-The learned model is output to a file. This file is used by the compression mechanism and decompression mechanism.
-Use another program to download the training data and convert it to hkl.
-
- 
-
-Compression mechanism
-
-``````````````````````
-
-Using the model output by the learning mechanism, the results of inference and difference of time series images are compressed.
-After deriving the difference between the original image and the inference result,error-bounded quantization, Density-based Spatial Encoding, and Partitioned Entropy Encoding are processed. These processes have the effect of increasing the compression rate when compressing.
-Use the zstd library to compress and output to a binary file (.dat).
-
-And,differences and keyframe images are also output to a binary file (.dat) using the zstd library.
-
- 
-
-Decompression mechanism
-
-`````````````````````````
-
-Using the model output by the learning mechanism and the binary file (.dat) output by the compression mechanism, the image group input to the compression mechanism is restored.
-By inferring by inputting keyframes, the inference result of the compression mechanism is reproduced.
-The processing of Density-based Spatial Decoding and Partitioned Entropy Decoding is performed in the reverse order of the compression mechanism, and the original difference is restored.
-Since the error-bounded quantization process is lossy compression, it is not included in the decompression mechanism.
-The inference result and the difference are added to restore the original image and output it.
-
-Operating environment
+動作環境
 ========
-In this case, we used AWS EC2 to build the machine.
+今回はマシンの構築にAWSのEC2を使用しました。
 
-EC2 Information
+EC2情報
 '''''''''''
 * AMI
    CentOS 7.9.2009 x86_64 - ami-00f8e2c955f7ffa9b
-* Instance Type
+* インスタンスタイプ
    p2.xlarge
    
 マシン情報概要
 ''''''''''''''
 
-* Operating Systems
+* 動作OS
    CentOS7
 
-* CPU
+* 動作CPU
    Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz×4 
   
-* GPU
+* 動作GPU
    NVIDIA K80(12GB)
    
-* Memory
+* 動作メモリ
    64GB
 
-Environment construction procedure
+環境構築手順
 ============
 
-Follow the steps below to build the environment.
+以下の手順で環境構築を行います
 
-* Install the NVIDIA driver
-* Install CUDA
-* Install cuDNN
-* Create a virtual environment
+* NVIDIAドライバのインストール
+* CUDAのインストール
+* cuDNNのインストール
+* 仮想環境の作成
 
-Install the NVIDIA driver
+NVIDIAドライバのインストール
 '''''''''''''''''''''''''''''
-Follow the steps below to install the driver so that you can use NVIDIA's GPU.
+NVIDIAのGPUを使用できるようにドライバを以下の手順に従ってインストールします。
 
-Disable the standard driver
+標準ドライバの無効化
 ..........................
-You need to turn off the standard driver so that it does not interfere with the installation of the NVIDIA driver. Please execute the following command.
+NVIDIAドライバのインストールの邪魔をしないように標準ドライバを切る必要があります。以下のコマンドを実行してください。
 
 .. code-block:: sh
 
   lsmod | grep nouveau
   
-Then, use a text editor such as vim to create a file in the following directory.
+その後、vimなどのテキストエディタを使用して以下のディレクトリにファイルを作成してください。
 
 .. code-block:: sh
 
    /etc/modprobe.d/blacklist-nouveau.conf
 
-Write the following settings in the file you created and save it.
+作成したファイルには以下を記述して保存します。
 
 .. code-block:: sh
 
    blacklist nouveau
    options nouveau modeset=0
    
-Then reboot and run the following command. If nothing is displayed, the disabling has been successful.
+ その後再起動をして、以下のコマンドを入力します。何も表示されなければ、無効化に成功しています。
 
 .. code-block:: sh
 
    lsmod | grep nouveau
    
-Running the installation
+インストールの実行
 ..........................
-Install the package required to install the NVIDIA driver. Execute the following command.
+NVIDIAドライバのインストールに必要なパッケージをインストールします。以下のコマンドを実行してください。
 
 .. code-block:: sh
 
    yum -y install kernel-devel kernel-devel-$(uname -r) kernel-header-$(uname -r) gcc gcc-c++ make
   
-Then, check the name of your GPU device. You can check it by running the following command.
+次に自分のGPUデバイスの名前を確認します。以下のコマンドを実行して確認できます。
 
 .. code-block:: sh
 
    lspci | grep -i nvidia
 
-From the`NVDIA driver download page <https://www.nvidia.co.jp/Download/index.aspx?lang=jp/>`_ as shown in the following figure, select your GPU device and proceed to installation.For **CUDA Toolkit**, please select **10.0**.
+以下の図のような `NVDIAドライバダウンロードのページ <https://www.nvidia.co.jp/Download/index.aspx?lang=jp/>`_ から自分のGPUデバイスを選択してインストールに進みます。「CUDA Toolkit」については「10.0」を選択してください。
 
 .. image:: ./img/img1.png
 
-Next, run the downloaded file to run the NVIDIA driver installer.The following command is an example.Please replace the file name with the one you have downloaded and run it.
+次にダウンロードしたファイルを実行してNVIDIAドライバのインストーラを実行します。以下のコマンドは一例になります。ダウンロードしたファイル名に置き換えて実行してください。
 
 .. code-block:: sh
 
    sh NVIDIA-Linux-x86_64-410.129-diagnostic.run
    
-Select "YES" for all of the installer's selections to execute the installation.
-The installation is complete when the screen shown in the following figure is displayed.
+インストーラの選択に対して全て「YES」を選択してインストールを実行します。
+以下の図のような画面が表示されていればインストール完了となります。
 
 .. image:: ./img/img2.png
 
-Execute the following command, and if the screen shown in the figure below is displayed, it has been installed correctly.
-Select "YES" for all of the installer's selections to execute the installation.
+以下のコマンドを実行して、以下の図のような画面が表示されれば、正しくインストールされています。
 
 .. code-block:: sh
 
@@ -175,16 +159,16 @@ Select "YES" for all of the installer's selections to execute the installation.
 
 .. image:: ./img/img3.png
 
-Install CUDA
+CUDAのインストール
 '''''''''''''''''''''''''''''
 
-Install CUDA to use the GPU in your programs.
-In this case, we will use the CUDA **10.0** version.
-Open`the download page <https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=CentOS&target_version=7&target_type=rpmlocal>`_ shown in the figure below and select "Linux", "x86_64", "CentOS", "7", "rpm(local)" or "rpm(network)" to download the installer.
+GPUをプログラムで使用するためにCUDAをインストールします。
+今回は、CUDA **10.0** のバージョンを使用します。
+以下の図のような `ダウンロードページ <https://developer.nvidia.com/cuda-10.0-download-archive?target_os=Linux&target_arch=x86_64&target_distro=CentOS&target_version=7&target_type=rpmlocal>`_ を開き「Linux」「x86_64」「CentOS」「7」「rpm(local) または rpm(network)」を選択してインストーラのダウンロードを行ってください。
 
 .. image:: ./img/img4.png
 
-Next, run the downloaded file to run the CUDA 10.0 installer. Please run the following command.
+次にダウンロードしたファイルを実行してCUDA10.0のインストーラを実行します。以下のコマンドを実行してください。
 
 .. code-block:: sh
 
@@ -193,14 +177,14 @@ Next, run the downloaded file to run the CUDA 10.0 installer. Please run the fol
    yum clean all
    yum install cuda
 
-Then, run the following command to pass it through. To reflect the result, please reboot after running it.
+その後、以下のコマンドを実行してパスを通します。結果を反映するために、実行した後は再起動をしてください。
 
 .. code-block:: sh
 
    echo ' PATH=”/usr/local/cuda-10.0/bin${PATH:+:${PATH}}"' >> ~/.bashrc
    echo 'export LD_LIBRARY_PATH=”/usr/local/cuda-10.0/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"' >> ~/.bashrc
 
-After rebooting, please execute the following command. If the screen shown in the figure below appears, the software has been installed correctly.
+再起動した後は以下のコマンドを実行してください。以下の図のような画面が表示されれば、正しくインストールされています。
 
 .. code-block:: sh
 
@@ -208,17 +192,17 @@ After rebooting, please execute the following command. If the screen shown in th
 
 .. image:: ./img/img5.png
 
-Install cuDNN
+cuDNNのインストール
 '''''''''''''''''''''''''''''
 
-Following CUDA, we will download cuDNN to use GPU in our programs.
-You will need to create an NVIDIA account in advance. You may be asked to log in during the following procedure, so if you haven't created one, please do so at that time.
-This time, we will use cuDNN **7.6.5** version.
-Go to`the download page <https://developer.nvidia.com/rdp/cudnn-archive>`_ shown in the figure below and select "Download cuDNN v7.6.5 (November 5th, 2019), for CUDA 10.0" and "cuDNN Library for Linux" to download.
+CUDAに引き続きGPUをプログラムで使用するためにcuDNNをダウンロードします。
+なお、こちらについてはあらかじめNVIDIAアカウントを作成する必要があります。下記手順の途中でログインを要求されることがあるので未作成の場合は、そのタイミング作成してください。
+今回はcuDNN **7.6.5** のバージョンを使用します。
+以下の図のような `ダウンロードページ <https://developer.nvidia.com/rdp/cudnn-archive>`_ を開き、「Download cuDNN v7.6.5 (November 5th, 2019), for CUDA 10.0」「cuDNN Library for Linux」を選択してダウンロードしてください。
 
 .. image:: ./img/img6.png
 
-After the download is complete, unzip the file and place it in an appropriate location. Execute the following command.
+ダウンロードが完了したら、解凍してファイルを適当な場所に配置します。以下のコマンドを実行してください。
 
 .. code-block:: sh
 
@@ -226,18 +210,17 @@ After the download is complete, unzip the file and place it in an appropriate lo
    sudo cp -a cuda/include/* /usr/local/cuda/include/
    sudo cp -a cuda/lib64/* /usr/local/cuda/lib64/
    sudo ldconfig
-
-Create a virtual environment
+   
+仮想環境の作成
 '''''''''''''''''''''''''''''
 
-To separate the Python environment and make it easier to manage, we will use a virtual environment.
-In this case, we will use "pyenv". We will install and use "anaconda" in it.
+Python環境を切り分け、管理しやすくするため、仮想環境を使用します。
+今回は「pyenv」を使用して、その中に「anaconda」をインストールして使用します。
 
-
-Install pyenv
+pyenvのインストール
 ..........................
 
-Install pyenv and enable the "pyenv" command. Execute the following command and then reboot.
+pyenvをインストールして「pyenv」コマンドを有効にします。以下のコマンドを実行した後、再起動をしてください。
 
 .. code-block:: sh
 
@@ -245,46 +228,46 @@ Install pyenv and enable the "pyenv" command. Execute the following command and 
    echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc
    echo 'export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.bashrc
 
-If you are using pyenv, use pip to install the library. This may involve unzipping the zip file, so if you do not have the zip command, you will need to install it. You can install it by running the following command
+pyenvを使用する場合は、pipを使用してライブラリをインストールします。その際にzipファイルの解凍を行う場合があるため、zipコマンドがない場合はインストールしておく必要があります。以下のコマンドを実行してインストールできます。
 
 .. code-block:: sh
 
    yum -y install zip unzip bzip2
    
-Install anaconda
+anacondaのインストール
 ..........................
 
-Install anaconda in pyenv to create a virtual environment. You can run the command "pyenv install -l" to see a list of environments that can be installed. This time, we will use "anaconda3-4.3.1". The command to create a virtual environment is as shown below.
+pyenvの中にanacondaをインストールして仮想環境を作成します。「pyenv install -l」でインストールできる環境の一覧を表示できます。今回は「anaconda3-4.3.1」を使用します。仮想環境作成のコマンドは以下になります。
 
 .. code-block:: sh
 
    eval "$(pyenv init -)"
    pyenv install anaconda3-4.3.1
 
-After that, you can enter the virtual environment by executing the following command.
+その後、以下のコマンドで仮想環境に入ります。
 
 .. code-block:: sh
 
    pyenv rehash
    pyenv global anaconda3-4.3.1
 
-Run the following command to check the version, and if you see the following message, you have entered the virtual environment.
+以下のバージョンを確認するコマンドを実行して、以下の表示が確認できれば仮想環境に入れています。
 
 .. code-block:: sh
 
    python -V
    Python 3.6.0 :: Anaconda 4.3.1 (64-bit)
 
-Install the required libraries
+必要なライブラリのインストール
 ..........................
 
-pyenv + anaconda で環境に入った後は、pipを使用して必要なライブラリをインストールします。まずは以下のコマンドでpipのアップデートをします。
+pyenv + anacondaで環境に入った後は、pipを使用して必要なライブラリをインストールします。まずは以下のコマンドでpipのアップデートをします。
 
 .. code-block:: sh
 
    pip install --upgrade pip
    
-Next, run the following command to install the necessary libraries.
+次に以下のコマンドで必要なライブラリをインストールします。
 
 .. code-block:: sh
 
@@ -299,7 +282,7 @@ Next, run the following command to install the necessary libraries.
    pip install cupy-cuda100==8.4.0
    pip install numpy==1.19.5
 
-If you want to run the sample program for creating training data using Kitti data in the appendix, please install the following libraries additionally.
+付録のKittiデータを使用した学習データ作成のサンプルプログラムを動かす場合には、以下のライブラリを追加でインストールしてください。
 
 .. code-block:: sh
 
@@ -307,12 +290,12 @@ If you want to run the sample program for creating training data using Kitti dat
    pip install bs4
    pip install imageio==2.9.0
 
-If you run the following command and see "GPU" in the device_type field in the figure below, your Python program has successfully recognized the GPU.
+以下のコマンドを実行して以下の図のようにdevice_typeに”GPU”がある場合は、pythonプログラムからGPUを認識することに成功しています。
 
 .. code-block:: sh
 
    python
-   # python interactive mode below
+   # 以下pythonの対話モード
    >>> from tensorflow.python.client import device_lib
    >>> device_lib.list_local_devices()
 
@@ -776,3 +759,591 @@ Kittiデータを使用した学習データ作成のサンプルプログラム
 
 「X_***.hkl」は画像データをダンプしたもの、「sources_***.hkl」はディレクトリのアーキテクチャ情報を保存したものになります。
 なお、ファイル名は固定値で学習機構から参照されるため、変更しないでください。
+
+システムの詳細説明
+==================
+
+以降の記述内容は、本システムの拡張を加える際に必要な情報を説明するものです。
+前提として、未来のフレームを予測するモデル `PredNet <https://coxlab.github.io/prednet/>`_ についても概要を理解しているものとして解説します。
+
+学習データ作成プログラムの仕組み
+====================================
+
+学習データ作成プログラムは基本的にPredNetの学習データ作成プログラムを元に作成しています。元のプログラムからは以下のような変更・追加をしています。
+
+* 入力フォルダ構成を独自のものに変更
+* 入力データを自動で学習用と評価用に分ける処理を追加
+* 画像を一定のサイズに切り取る処理をPredNetの入力可能範囲にパディングする処理に変更
+
+PredNetの学習データ作成プログラムは `github上 <https://github.com/coxlab/prednet/blob/master/process_kitti.py>`_ に公開しております。
+
+学習データ作成プログラムのコントロールフロー
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+学習データ作成プログラムのフローチャートは以下の図の通りです。
+
+.. image:: ./img/img8.png
+
+学習データ作成プログラムのフロー解説
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+以下、学習データ作成プログラムのフロー説明をブロックごとに行います。
+
+プログラムの実行
+..........................
+
+学習を行う際に評価用データを用意することで、正しく学習を行いやすくなります。そのため、入力フォルダの中から一部を評価用に使用するようにしています。
+理想の割合としては学習用と評価用で9:1を目指しています。ただし、最低でも1フォルダは検証用に使用するようにしています。実装は以下のような流れになっています。
+
+1.	フォルダ(1時系列)を読み込み、listに保存
+2.	listの個数を求めて10で割り、評価用のフォルダの個数を決める
+3.	②が1未満になった場合、1にする
+4.	②、③で求めた個数になるまで、フォルダのlistから乱数で抜き出す
+5.	④で抜き出したものを評価用、残ったものを学習用として使用する
+
+パディング
+..........................
+
+パディングを行う理由としては、PredNetの仕様上の問題です。
+PredNetは画像サイズが「2^(モデルのレイヤ数-1)」の倍数でなければなりません。PredNetのデフォルトのレイヤ数は4であるため、固定値で8の倍数にパディングするようにしています。PredNetのモデル構造を変更した場合は、こちらの値も変更するようにしてください。
+
+例：実際の値　レイヤ数:4
+この例での画像サイズは8の倍数でなくてはならない
+
+.. math:: 2^(4-1) = 8	
+
+パディングの実装関数仕様
+^^^^^^^^^^^^^^^^^^^^^
+
+実行関数内で、下記の「padding_shape」に画像の縦横のサイズを渡して、パディング後のサイズを取得します。パディング後のサイズで0埋めの配列を作成して、その配列に元画像の画像を代入してパディング後の配列とします。イメージ図が以下の図になります。元画像の値をインデックス番号0から代入します。結果として右下にパディングした部分が来ます。
+
+.. image:: ./img/img9.png
+
+関数名：padding_shape (height, width)
+
+引数：
+   * height：画像の縦のサイズ
+   * width：画像の横のサイズ
+下記の「padding_size」にheight とwidth別々に渡してそれぞれのパディング後のサイズを受け取ります。その値をtuple型にまとめて値を返します。
+
+関数名：padding_size (num)
+
+引数：
+   * num：パディング前のサイズ
+以下の図は長さを求めるためのイメージ図になります。実際の処理は8を繰り返して足していく方法ではなく、サイズを8で割ることで、何回目に超えるかを求めています。
+
+例：1242の場合
+
+.. math:: 1242 / 8 = 155.25
+
+この場合、155回目までは超えず、156回目で超えることが確認できます。
+最終的には以下の式で値を返しています。
+
+.. math:: (155 + 1) * 8 = 1248
+
+実行スクリプト
+==================
+
+ここではコンソールコマンドから呼び出される実行スクリプト「tezip.py」について解説します。入力した引数の値をチェックとGPUの有無を確認します。正しくない入力が行われた場合はプログラムを終了するようにしています。引数の意味については「ユーザーズマニュアル」を参照してください。
+引数は「argparse.ArgumentParser」を使用して管理しています。引数チェック・GPU確認処理の流れは以下になります。
+
+* 共通
+
+1.	「-f」の値をチェックして、引数で指定されていた場合、「os.environ['CUDA_VISIBLE_DEVICES'] = '-1'」でGPUデバイスの認識を外す。
+2.	「tensorflow.python.client device_lib. list_local_devices()」でGPUの有無をチェックする
+3.	Falseでフラグを作成して、GPUがあればフラグをTrueにする
+4.	フラグがTrueなら「GPU MODE」、Falseなら「CPU MODE」と出力する
+5.	学習機構「-l」、圧縮機構「-c」、解凍機構「-u」が複数選択されているかチェックし、複数選択されていたらメッセージを出力してプログラムを終了する
+6.	学習機構「-l」、圧縮機構「-c」、解凍機構「-u」のいずれも入力されていない場合はメッセージを出力してプログラムを終了する
+
+* 学習機構
+
+1. 「train mode」と出力
+2. 「-l」「-v」の値を渡して学習機構の実行関数を呼び出す
+
+* 圧縮機構
+
+1.	「compress mode」と出力
+2.	「-w」と「-t」の値をチェックして入力が無い、もしくは両方に入力があればメッセージを出力してプログラムを終了する
+
+※両方の場合、「SWP」と「DWP」のどちらで実行すればよいのか不明になるため
+
+3.	「-m」の値をチェックして入力が無い、もしくは「abs」「rel」「absrel」「pwrel」以外の値が入力されていた場合、メッセージを出力してプログラムを終了する
+4.	「-b」の値をチェックして入力が無い場合、メッセージを出力してプログラムを終了する
+5.	「-m」「-b」の値から「absrel」の場合のみ2つ、それ以外は1つになっているかをチェックする。正しくない場合は、メッセージを出力してプログラムを終了する
+6.	「-c」「-w」「-t」「-m」「-b」「-v」「-n」の値とGPU認識のフラグを渡して圧縮機構の実行関数を呼び出す
+
+* 解凍機構
+
+1.	「uncompress mode」と出力
+2.	「-u」「-v」の値とGPU認識のフラグを渡して解凍機構の実行関数を呼び出す
+
+引数に対して入力する個数が違う場合(-lに1つしか与えないなど)は「argparse.ArgumentParser」が自動で処理するため、基本的にチェックしていません。
+圧縮機構で使用する「-b」のみ個数が可変になっているため、⑤のようなチェックを行っています。
+「-v」は画面出力のフラグになっています。詳しくはユーザーズマニュアルを参照してください。
+
+学習機構
+==================
+
+学習機構については、PredNetの学習プログラムを大きな変更なく使用しています。ファイルは「train.py」になります。
+PredNetの学習プログラムは `github上 <https://github.com/coxlab/prednet/blob/master/kitti_train.py>`_ にて公開しております。
+
+学習機構のコントロールフロー
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+学習機構のフローチャートは以下の図の通りです。
+
+.. image:: ./img/img10.png
+
+学習機構のフロー解説
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+モデルパラメータの設定やモデル構築の部分で選択している固定値についてはPredNetの値から変更せずに使用しています。
+変更点は入力サイズの指定です。PredNetは学習データ作成プログラムと同じ固定値を選択していましたが、hklファイルからサイズを読み込み、同じ大きさになるように変更しています。
+学習パラメータについては変更しています。
+
+* 変更した学習パラメータ
+
+  * nb_epoch：学習のエポック数(100)
+  * batch_size：バッチサイズ(1)
+  * samples_per_epoch：エポックのシーケンス数(5)
+  * N_seq_val：検証画像のシーケンス数(2)
+  * nt：1シーケンス内の画像数(2)
+  
+※シーケンス：連続した画像
+
+これらは固定値として埋め込んでいます。カッコ内の数字が現状の数値になります。現状は最低限の数値で設定しています。これらの数値を大きくすることで、学習精度の向上を見込むことができますが、実行環境のメモリ状況や入力画像サイズによってはデータがメモリに乗りきらず、学習できないことがあります。実行環境によって変更してください。
+
+学習データや検証データの前処理については、PredNetのSequenceGeneratorを使用して、hklファイルの情報を学習に使用できるようにしています。
+SequenceGeneratorの変更点としては、画像データを常に保持する仕様だったので、学習データが必要な時にだけデータを読み込むようにしました。これにより、無駄にメモリを使い続ける状態を回避しています。
+
+* SequenceGeneratorの変更点
+
+学習時には「keras.models.model.fit_generator」を使用しているため、nextで次の学習に移行する時の処理を追加することができます。
+「self.X」で画像データを保持していたのを、「self.data_file」として、パスだけ保持するようにしました。nextで画像データの取り出しが必要な時は、next内で画像データを読み込むように変更しました。
+PredNetのSequenceGeneratorは `github上 <https://github.com/coxlab/prednet/blob/master/data_utils.py#L7>`_ に公開しております。
+
+圧縮機構
+==================
+
+圧縮機構では大きく以下の6つの処理に分けられます。ここではこれらの処理で実際に何をしているのかを解説します。ファイルは「compress.py」になります。
+
+1. 推論準備(画像読み込み・モデルセッティング)
+2.	推論
+3.	Error-bounded quantization
+4.	Density-based Spatial Encoding
+5.	Entropy Encoding
+6.	出力
+
+圧縮機構のコントロールフロー
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+圧縮機構のフローチャートは以下の図の通りです。
+
+.. image:: ./img/img11.png
+
+圧縮機構のフロー解説
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+上記の図である圧縮機構のコントロールフローは左側が圧縮時全体の工程を表しており、右側が推論中の工程を表しています。
+
+推論準備
+..........................
+
+圧縮機構のコントロールフローにある「推論」までの前処理の流れを説明します
+
+画像読み込み
+..........................
+
+コマンドライン引数で指定したディレクトリにある画像から「Pillow」を使用して画像を読み込みます。読み込んだ際はpython標準の「sorted」に従い、画像をソートします。これにより時系列順に画像が並ぶことを想定しています。
+また、PredNetの仕様上、以下のように5次元配列にする必要があります。
+
+(時系列，画像枚数，縦サイズ，横サイズ，チャンネル)
+
+hklにダンプする場合は複数時系列を1つのファイルで管理できます。
+今回は1時系列の画像群をフォルダから読み込むため、4次元配列となります。なので、先頭に1時系列であるという情報を追加して5次元配列にしています。
+
+画像パディング
+..........................
+
+上記の「パディング」の節にある通り、PredNetの仕様上、画像サイズを「2^(モデルのレイヤ数-1)」の倍数にしなければなりません。そのため、パディングを行って画像サイズを調整します。
+
+画像パディングの実装関数仕様
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+以下の関数は「data_utils.py」に実装されています。
+関数名：data_padding(X_test)
+
+引数：
+   X_test：読み込んだ画像配列
+下記の「padding_shape」に画像の縦横のサイズを渡して、パディング後のサイズを取得します。パディング後のサイズで埋めの配列を作成して、その配列に元画像の画像を代入してパディング後の配列とします。
+
+関数名：padding_shape(height, width)
+
+引数：
+   * height：画像の縦のサイズ
+   * width：画像の横のサイズ
+下記の「padding_size」にheight とwidth別々に渡してそれぞれのパディング後のサイズを受け取ります。その値をtuple型にまとめて値を返します。
+
+関数名：padding_size(num)
+
+引数：
+   * num：パディング前のサイズ
+numのサイズを超えるまでtmp変数に8を足し続けて、numのサイズを超えた場合その値をパディング後のサイズとすることができます。実際の処理は、8を繰り返して足していく方法ではなく、上記の「パディングの実装関数仕様」節のようにサイズを8で割ることで、何回目に超えるかを求めています。
+これはPredNetがレイヤ数の関係で8の倍数になればよいため、固定値としています。レイヤ数を変更した場合はこの8という値も変更してください。
+
+モデルセッティング
+..........................
+
+「学習機構」で出力されたモデル構造と重みを読み込んでモデルをセッティングします。基本的にはPredNetのモデルセッティングと同じですが、inputの形状を一部変更しています。学習時には1時系列の画像枚数を固定値でセッティングしていましたが、圧縮時には固定できないため、その情報を「None」にして可変にしています。
+モデルをセッティングしたら画像サイズとinputのサイズを比較してモデルに対応しているかをチェックします。対応していなかった場合は、その内容を表示してプログラムを終了します。
+
+推論
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+PredNetのデフォルトの推論では、直前の元画像から次のフレームを推論して、それを繰り返している仕様でした。TEZIP論文では、推論結果画像から推論するという内容であったため、本システムはそのように仕様を変更しました。
+
+ウォームアップ推論
+..........................
+
+PredNetはLSTMモデルの一種であるため、前の推論情報を活かして推論します。最初の数フレームを直前の元画像から推論し、ウォームアップとして使用することで、推論の精度が高まる可能性があります。引数「-p」で指定された枚数だけ、直前フレームからの推論を行い、ウォームアップを適用します。
+以下の「SWPとDWP」節に出てくるキーフレームの切り替えの基準には含まれないようになっています。
+
+SWPとDWP
+..........................
+
+推論結果から次のフレームを推論するということは、段々と精度が落ちていくことになります。精度をある程度保つために、途中で元画像から推論の推論を挟む必要があります。その手法が「Static Window-based Prediction(SWP)」と「Dynamic Window-based Prediction(DWP)」になります。
+
+* SWP
+固定値で1枚の画像から推論する枚数を指定します。指定した枚数推論した後、次の推論に必要な元画像をキーフレームとして、その画像から指定した枚数推論します。これを全画像枚数分繰り返します。
+
+* DWP
+Mean Square Error(MSE)の閾値を設定して、超えた場合にキーフレームを切り替えます。元画像と推論結果のMean Square Error(MSE)を求め、閾値が超えていなければ続行、超えていた場合はキーフレームを切り替えます。これを全画像分繰り返します。
+
+実行の流れは以下になります。
+
+1.	キーフレームから推論
+2.	MSEを計算
+3.	基準(SWPなら指定枚数，DWPなら閾値)を超え無かった場合、推論結果から推論
+4.	②～③を繰り返す
+5.	基準を超えた場合、これまでの値をlistに保存する。その後①～③を繰り返す。
+6.	①～⑤を全画素分繰り返す。
+
+以下の図の流れがキーフレーム切り替えの流れになります。実装方法としては、キーフレームを切り替える基準が違うだけで、処理としては同じになるため、一つの条件分岐で切り替えています。
+実際にキーフレームとして出力されるのは黄色に当てはまる画像になります。青色の画像は実際には黒(0埋め)として保存され、圧縮したときにほとんど無いものとして扱われます。
+また、キーフレームに当てはまる場所の推論画像(灰色の矩形)も、黒(0埋め)として保存されます。
+
+.. image:: ./img/img12.png
+
+Error-bounded quantization
+..........................
+
+ここでは、最終的な画像の圧縮率を上げるため、画像データに非可逆の処理を行います。以下の4つを実装しています。
+
+*	abs
+absolute error bound
+
+*	rel
+relative bound ratio
+
+*	absrel
+「abs」と「relの両方の範囲を満たしている範囲を使用する
+
+*	pwrel
+point wise relative error bound
+
+これらは許容範囲を定める手法になります。基準を満たした範囲の値を平均値で統一して量子化します。
+
+画像パディングの実装関数仕様
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+関数名：error_bound(origine, diff, mode, value, GPU_FLAG, xp)
+
+引数：
+   *	origine：元画像の配列
+   *	diff：差分の配列
+   *	mode：コマンドライン引数「-m」の文字列
+   *	value：コマンドライン引数「-b」の値
+   *	GPU_FLAG：GPUを認識しているかのフラグ
+   *	xp：「numpy」「cupy」のどちらか(GPUの有無で決まる)
+
+「-m」の文字列を調べ、それぞれに対応した許容範囲を決定します。許容範囲を決定した後は量子化を行います。許容範囲を満たしている値を許容範囲の上限値と下限値の平均値で統一します。
+また、valueが0の場合は可逆圧縮の指定として何も処理をせず、diffをそのまま返します。
+
+absolute error bound
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+absolute errorは「-b」に入力した値をそのまま使用して許容範囲を決定します。イメージ図が以下の図になります。
+
+.. image:: ./img/img13.png
+
+relative bound ratio
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+relative bound ratioは誤差の絶対値(絶対誤差)を求めた後、最大値と最小値を求めます。その後最大値から最小値を引いた値に「-b」に入力した倍率をかけた値を許容範囲とします。こちらの内容を式にしたものが以下になります。
+
+.. math::　許容範囲 = (誤差の最大値 – 誤差の最小値) × 倍率
+
+relative bound ratioのイメージ図が以下の図になります。
+
+.. image:: ./img/img14.png
+
+absrel
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+上記の「absolute error bound」節で解説したabsと「relative bound ratio」節で解説したrelの両方の範囲を満たしているものを使用します。両方の範囲を満たすということは、値のabsとrelの値を比較して小さい値を使用するということになります。
+
+例は以下の通りです。
+
++ 配列の値：a
++ absの値：b
++ relの値：c
+
+.. math:: 
+
+   b < c の場合
+   ・ 上限値：a + b < a + c　上限値の場合、小さい方が両方の範囲に入るため、a + b
+   ・ 下限値：a - b  > a - c　 下限値の場合、大きい方が両方の範囲に入るため、a - b
+
+実際にはフレーム別・チャンネル別にrelの範囲を求めているので、1時系列の中でabsの範囲が使用される場合とrelが使用される場合が頻繁に入れ替わる可能性が高くなります。
+
+absrelのイメージ図が以下の図になります。absとrelの許容範囲を求める部分については「absolute error bound」節と「relative bound ratio」節にあるため、省略しています。
+
+.. image:: ./img/img15.png
+
+point wise relative error bound
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+point wise relative error boundは画素ごとに許容範囲を決定します。「-b」で指定した倍率を元画像に画素ごとにかけて許容範囲を決定します。イメージ図が以下の図になります。
+
+.. image:: ./img/img16.png
+
+量子化
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+量子化は以下の流れで行います。イメージ図が以下の図になります。図では、pwrelで求めた許容範囲を使用しています。
+
+1. 上記の「absolute error bound」から「point wise relative error bound」節のいずれかで求めた許容範囲を使用する
+2.	順番に画素の許容範囲を比較していき、重なっている部分の上限値と下限値を採用して更新する
+3.	許容範囲に収まらなかった値が来た時、そこまでの値を以下の式で求めた値にする
+
+.. math:: 値 = (上限値 + 下限値) / 2
+
+4.	次の画素の許容範囲を上限値と下限値として使用する
+5.	全画素終了まで②～④を繰り返す
+
+.. image:: ./img/img17.png
+
+この処理によって、同じ値が連続するように圧縮することができます。これにより今後説明する「Density-based Spatial Encoding」を実行したときに、より圧縮率を高めやすくなります。
+
+Density-based Spatial Encoding
+..........................
+
+Density-based Spatial Encodingでは前の画素との差分を求めます。この処理により、画像内で連続している値は全て0となります。これは今後の「Entropy Encoding」の処理をする時の圧縮率を高めることに繋がります。
+
+Density-based Spatial Encodingの実装関数仕様
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+関数名：finding_difference(arr)
+
+引数：
+   * arr：「Error-bounded quantization」の結果配列
+
+実装方法については、最後の値を除いた入力配列から、最初の値を除いた入力配列を引いて計算します。これにより、並列的に計算を行うことができます。一つ一つ値を取り出して計算する方法もありますが、GPUへの最適化として、この方法で実装しています。実装のイメージ図が以下の図になります。図のAとBは以下を表しています。
+
+*	A：最後の値を除いた入力配列
+*	B：最初の値を除いた入力配列
+
+.. image:: ./img/img18.png
+
+Entropy Encoding
+..........................
+
+Entropy Encodingでは頻度の高い値をビット数の小さい値に変換します。これにより、ビット数が小さい値が多くなり圧縮率の向上に繋がります。しかし、値の頻度がまばらになっている場合、圧縮率は高くなりにいという特徴があります。場合によってはEntropy Encodingを行う前よりもサイズが大きくなることもあります。そのため、オプションでEntropy Encodingを実行しないようにすることができます。「-n」が指定された場合はこちらの処理は実行されません。
+Entropy Encodingの処理は以下の流れで実装しています。
+1.	差分配列を「1600」との差を求めて、その値に変換する。「1600」はマッピングテーブル内の値とマッピングテーブルのインデックスの値が重複しないようにするための数値になります。(後述の「①の処理には2つの目的」のII参照)
+2.	頻度の多い値順にソートしたマッピングテーブルを作成する。
+3.	マッピングテーブルの中身と一致した差分配列の値をマッピングテーブルのインデックスの値に変換する。
+
+①，②の処理は実行関数内で、③は「replacing_based_on_frequency」関数で実装しています。
+
+①の処理には2つの目的があります。
+
+*	負の数を無くす
+
+マッピングテーブル作成の過程で負の数があるとエラーが起きます。それを防ぐために「1600」から値を引いて、正の数のみに変換します。
+
+*	マッピングテーブル内の値とインデックスの値が重複しないようにする
+
+繰り返し処理でマッピングテーブルと差分配列の比較を順番に行うため、一度変換した値が、後の繰り返し時に、変換の対象になってしまう可能性があります。それを避けるために「1600」との差分に変換します。
+
+* 「1600」との差分前
+   * マッピングテーブルの値の範囲：-510～510
+   * インデックスの範囲：0～1020
+
+↑上記は0～510が重複している
+
+* 「1600」との差分後
+   * マッピングテーブルの値の範囲：1090～2110
+   * インデックスの範囲：0～1020
+
+↑重複していない
+
+②，③については実行処理のイメージを以下の図で解説します。入力の値は簡単な例として使用しています。(実際には1090～2110の値が入ります)
+
+.. image:: ./img/img19.png
+
+Entropy Encodingの実装関数仕様
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+関数名：replacing_based_on_frequency(arr, table, xp)
+
+引数：
+   *	arr：「Density-based Spatial Encoding」の結果配列
+   *	table：マッピングテーブル
+   *	xp：「numpy」「cupy」のどちらか(GPUの有無で決まる)
+
+tableは関数に入れる前にlist型からxp配列に変換してから使用します。これは、cupyを使用することになった場合、tableがlist型のままだと、GPUとCPUのデータのやり取りが発生して処理が重くなるためです。
+処理の流れについては先ほどの実行処理のイメージ図を参照してください。これを実現するために、xp.whereでマッピングテーブルと配列の値を比較して、一致した場合に配列の値をインデック番号に変換します。
+
+出力
+..........................
+
+圧縮機構を実行した後は以下の3ファイルが出力されます。
+「.dat」形式のファイルについては出力前に「zstd」ライブラリを使用して圧縮しています。
+
+*	圧縮前の画像名が記録されたテキストファイル(filename.txt)
+*	キーフレームファイル（key_frame.dat）
+*	実画像と推論結果の差分（entropy.dat）
+
+「filename.txt」は画像を読み込んだ際にパスから画像名をpython標準の「sorted」の順番に抽出して保存しています。解凍時に名ファイル名情報が必要になるためです。
+「key_frame.dat」はキーフレームの画像が保存されています。キーフレーム以外の部分については0埋めされており、圧縮時には無視できるサイズになることを想定しています。
+「entropy.dat」は先ほどの「推論」の結果から元画像との差分を求めて、「Error-bounded quantization」，「Density-based Spatial Encoding」，「Entropy Encoding」の処理を適用したデータが保存されます。末尾には以下の情報を埋め込んで保存します。これら解凍時に圧縮時の推論を再現するのに必要な情報になります。
+*	ウォームアップ推論に使用した枚数
+*	キーフレームのshape(画像の枚数, 縦横のサイズ, チャンネル数)
+*	「Entropy Encoding」で作成したマッピングテーブル
+
+マッピングテーブルについては、以下の順番で埋め込まれています。
+
+1.	マッピングテーブル
+2.	マッピングテーブルの長さ
+
+「-n」でEntropy Encodingを行わない場合もあるため、その場合はマッピングテーブルの長さの部分に「-1」を入れることで、解凍時にEntropy Encodingを行わなかったということが分かるようにしています。
+
+解凍機構
+==================
+
+解凍機構では大きく以下の5つの処理に分けられます。ここではこれらの処理で実際に何をしているのかを解説します。ファイルは「decompress.py」になります。
+
+*	推論準備(キーフレーム復元・モデルセッティング・圧縮時の情報取得)
+*	圧縮時の推論の再現
+*	Entropy Decoding
+*	Density-based Spatial Decoding
+*	出力
+
+解凍機構のコントロールフロー
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+解凍機構のフローチャートは以下の図の通りです。
+
+.. image:: ./img/img20.png
+
+解凍機構のフロー解説
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+上の図の解凍機構のコントロールフローは左側が解凍時全体の工程を表しており、右側が推論中の工程を表しています。
+
+推論準備
+..........................
+
+解凍処理を行う前に、いくつかの前処理を行います。
+
+モデルセッティング
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+圧縮時のモデルセッティング「モデルセッティング」と同じ方法でモデルをセッティングします。
+
+キーフレーム復元
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+圧縮時に出力したキーフレームをzstdで復元した後、numpy配列に圧縮時と同じデータ型で変換します。その後、「entropy.dat」に埋め込んでおいたshapeを取り出して変換します。この時、同時に埋め込んでおいた圧縮時のコマンドライン引数「-p」の値も取り出しておきます。
+キーフレームでは無い画像は0埋めされているため、「numpy.all」で0以外が含まれているものを抽出して、キーフレームのインデックスを取り出します。
+
+キーフレームパディング
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+キーフレームに対して「画像パディング」と同じ処理を行い、パディングします。
+
+圧縮時の推論の再現
+..........................
+
+以下の流れで圧縮時の推論を再現します。
+1. 「キーフレーム復元」で取り出した「-p」の数だけキーフレームから推論
+2.	キーフレームから推論
+3.	次のキーフレームが来るまで推論結果から推論
+4.	次のキーフレームが来たら①に戻る
+5.	①～④を繰り返す
+
+④の切り替えは「キーフレーム復元」で取り出した、キーフレームのインデックスを使用して繰り返し実行します。
+
+Entropy Decoding
+..........................
+
+ここでは「Density-based Spatial Encoding」の結果を復元します。そのためにentropy.datを読み込んで、差分配列と埋め込んでおいた「Entropy Encoding」で作成したマッピングテーブルを復元します。その後「解凍機構の実装関数仕様」の手順で復元を行います。マッピングテーブルの長さが「-1」だった場合はEntropy Encodingを行っていないことになるため、こちらの処理は実行されません。
+
+Entropy Decodingの実装関数仕様
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+replacing_based_on_frequency(arr, table, xp)
+
+引数：
+   * arr：「Density-based Spatial Encoding」の結果配列
+   * table：マッピングテーブル
+   * xp：「numpy」「cupy」のどちらか(GPUの有無で決まる)
+
+「Entropy Encoding」では、マッピングテーブルと配列の値を比較して、一致した場合に配列の値をインデック番号に変換しました。これとは逆に、配列の値とマッピングテーブルのインデックスを比較して、一致した場合に配列の値をマッピングテーブルの値に変換します。こちらも「Entropy Encoding」と同様にxp.whereを使用して実装しています。イメージ図が以下の図になります。
+また、マッピングテーブル内の値とインデックスの値が重複しないように、「1600」との差分を求めてマッピングテーブル内に保存していたので、関数実行後に「1600」との差分求めて元の値を復元します。
+
+.. image:: ./img/img21.png
+
+Density-based Spatial Decoding
+..........................
+
+ここでは「Error-bounded quantization」の結果を復元します。
+「Density-based Spatial Encoding」ではひとつ前の値との差を求めて出力しました。復元する場合、値を一つ一つ参照・計算して、前の結果を使用して復元します。そのため、「Density-based Spatial Encodingの実装関数仕様」節で示した画像のような並列的に処理することは不可能となりました。
+
+実装関数仕様
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+関数名：finding_difference(arr)
+
+引数：
+*	arr：「Entropy Decoding」の結果配列
+
+値を一つ一つ順番に見ていき、次のインデックスの値を引くことで元の値を復元します。実装のイメージ図が以下の図になります。
+
+.. image:: ./img/img22.png
+
+出力
+..........................
+
+解凍機構を実行した後は圧縮前の画像ファイルが出力されます。圧縮時に保存しておいた画像名が記録されているfilename.txtに従い名前を付けます。「Pillow」ライブラリを使用して画像を出力します。
+
+GPU(cupy)・CPU(numpy)の使用について
+====================================
+
+圧縮・解凍機構の推論後処理については、基本的にはGPUでの処理を想定して並列的に処理するように実装をしました。しかし、中には一つ前の要素の結果を使って計算するものもあり、並列化できないものもありました。そういった処理はGPUで実行した場合遅くなる可能性が高くなるため、CPUで実行しています。以下がその分類になります。
+
+GPU(cupy)で実行する処理
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+* 「absolute error bound」から「point wise relative error bound」：エラーバウンド機構の許容範囲を求める処理
+* Density-based Spatial Encoding
+* Entropy Encoding
+* Entropy Decoding
+
+CPU(numpy)で実行する処理
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+* 量子化の処理
+* Density-based Spatial Decoding
