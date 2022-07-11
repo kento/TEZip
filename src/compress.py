@@ -103,11 +103,12 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 		exit()
 	
 	try:
-		origine_img = np.array(Image.open(file_paths[0]))
+		isRGB = Image.open(file_paths[0]).mode is 'RGB' # Identify input image channel.
+		origine_img = np.array(Image.open(file_paths[0])) if isRGB else np.array(Image.open(file_paths[0]).convert('RGB'))
 		origine_img = origine_img[np.newaxis, np.newaxis, :, :, :]
 		files = [os.path.basename(file_paths[0])]
 		for path in file_paths[1:]:
-			img = np.array((Image.open(path)))
+			img = np.array((Image.open(path))) if isRGB else np.array((Image.open(path).convert('RGB')))
 			img = img[np.newaxis, np.newaxis, :, :, :]
 			origine_img = np.hstack([origine_img, img])
 			files.append(os.path.basename(path))
@@ -115,6 +116,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 		print(DATA_DIR, "contains files or folders that are not images.")
 		exit()
 	except IndexError as e:
+		print("index error from compress.py")
 		print(DATA_DIR, "contains files or folders that are not images.")
 		exit()
 	except UnidentifiedImageError as e:
@@ -122,13 +124,14 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 		exit()
 	
 	with open(os.path.join(OUTPUT_DIR, 'filename.txt'), 'w', encoding='UTF-8') as f:
+		f.write(f"{int(isRGB)}\n") # Append rgb status to filename for later possible grayscale recovery.
 		for file_name in files:
 			f.write("%s\n" % file_name)
 	
 	X_test = origine_img.astype(np.float32) /255
 
 	batch_size = 10
-	nt = X_test.shape[1] # 画像の枚数
+	nt = X_test.shape[1] # 画像の枚数 number of images
 
 	weights_file = os.path.join(WEIGHTS_DIR, 'prednet_weights.hdf5')
 	json_file = os.path.join(WEIGHTS_DIR, 'prednet_model.json')
@@ -154,7 +157,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	layer_config['output_mode'] = 'prediction'
 	data_format = layer_config['data_format'] if 'data_format' in layer_config else layer_config['dim_ordering']
 
-	# モデルセッティング
+	# モデルセッティング Model Setting
 	test_prednet = PredNet(weights=train_model.layers[1].get_weights(), **layer_config)
 	input_shape = list(train_model.layers[0].batch_input_shape[2:])
 	input_shape.insert(0, None)
@@ -162,7 +165,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	predictions = test_prednet(inputs)
 	test_model = Model(inputs=inputs, outputs=predictions)
 	
-	# 推論用に元画像にパディング
+	# 推論用に元画像にパディング Padding on the original image for prediction
 	X_test_pad = data_padding(X_test)
 
 	if test_model.input.shape[2] != X_test_pad.shape[2] or test_model.input.shape[3] != X_test_pad.shape[3]:
@@ -257,12 +260,12 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	origine_list.append(origine_stack_np)
 	predict_list.append(predict_stack_np)
 
-	# キーフレームの出力
+	# キーフレームの出力 Keyframe Output
 	key_frame = key_frame.flatten()
 	key_frame = key_frame.astype('uint8')
 	key_frame_str = key_frame.tostring()
 
-	# zstdでキーフレームを圧縮・出力
+	# zstdでキーフレームを圧縮・出力 Compress and output keyframes with zstd
 	data=zstd.compress(key_frame_str, 9)
 	with open(os.path.join(OUTPUT_DIR, "key_frame.dat"), mode='wb') as f:
 		f.write(data)
@@ -278,13 +281,13 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 
 	error_bound_time = 0
 
-	# エラーバウンド機構実施の準備
+	# エラーバウンド機構実施の準備 Preparation for implementation of error bound mechanism
 	difference_list = []
 	for idx in range(len(origine_list)):
 		origine_pick = origine_list[idx] /255
 		predict_pick = predict_list[idx]
 
-		# 推論画像からパディングを外す
+		# 推論画像からパディングを外す Remove the padding from the predicted image
 		predict_pick_no_pad = predict_pick[:, :, :X_test.shape[2], :X_test.shape[3]]
 
 		# GPU無:numpy GPU有:cupyに変換
@@ -315,7 +318,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	
 	if VERBOSE: print ("error_bound:{0}".format(error_bound_time) + "[sec]")
 	
-	# 推論結果をまとめる　GPU&pwrelの場合はこの段階でcupyに切り替わる
+	# 推論結果をまとめる　GPU&pwrelの場合はこの段階でcupyに切り替わる Summarize the prediction results
 	difference_model = difference_list[0]
 	for X_hat_np in difference_list[1:]:
 		difference_model = xp.hstack([difference_model, X_hat_np])
@@ -337,7 +340,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 		# エントロピー符号化のテーブル作成のために適当な正の整数に変換(1600との差分として保存)
 		difference_model = xp.subtract(1600, difference_model)
 
-		# エントロピー符号化用のテーブル作成
+		# エントロピー符号化用のテーブル作成 Creating a table for entropy coding
 		start = time.time()
 		table = []
 		x_elem = difference_model.flatten()
