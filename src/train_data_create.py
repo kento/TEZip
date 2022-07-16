@@ -54,6 +54,13 @@ def process_data(DATA_DIR, OUTPUT_DIR):
         exit()
     except IndexError:
         print("ERROR: Contains non-image files or inappropriate folders. <<Index Error>>")
+        # This error could be caused by input folder format, the following is the correct format:
+        # Input Folder:
+        # -> time progressive dataset 1
+        # -> -> images...
+        # -> time progressive dataset 2
+        # -> -> images...
+        # ...
         exit()
     except UnidentifiedImageError:
         print("ERROR: Contains non-image files or inappropriate folders.")

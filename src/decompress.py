@@ -52,7 +52,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, GPU_FLAG, VERBOSE):
 		print("ERROR:No such file or directory:", os.path.join(DATA_DIR, 'filename.txt'))
 		exit()
 
-	if (file_names[0].isdigit):
+	if (file_names[0].isdigit and len(file_names[0]) == 1):
 		isRGB = bool(file_names.pop(0)) # Remove the RGB Status if there is one.
 
 	# Load trained model
