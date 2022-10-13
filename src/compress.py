@@ -28,11 +28,12 @@ def error_bound(origine, diff, mode, value, GPU_FLAG, xp):
 	if mode == "abs":
 		E = xp.abs(value[0])
 	elif mode == "rel":
-		diff_abs = xp.abs(Df)
-		diff_max = diff_abs.max()
-		diff_min = diff_abs.min()
+		diff_max = Bf.max()
+		diff_min = Bf.min()
 		E = (diff_max - diff_min) * value[0]
+
 	elif mode == "absrel":
+		"""
 		if value[1] == 0 : return diff
 		diff_abs = xp.abs(Df)
 		diff_max = diff_abs.max()
@@ -43,6 +44,19 @@ def error_bound(origine, diff, mode, value, GPU_FLAG, xp):
 			E = abs_value
 		else:
 			E = rel_value
+		"""
+
+		if value[1] == 0 : return diff
+		diff_max = Bf.max()
+		diff_min = Bf.min()
+		abs_value = xp.abs(value[0])
+		rel_value = (diff_max - diff_min) * value[1]
+		if abs_value < rel_value:
+			E = abs_value
+		else:
+			E = rel_value
+
+
 	elif mode == "pwrel":
 		E = Bf * value[0] # Error abs
 	
