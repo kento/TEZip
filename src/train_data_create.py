@@ -37,6 +37,7 @@ def process_data(DATA_DIR, OUTPUT_DIR):
         for split in splits:
             folders_list = []
             for folder in splits[split]:
+                print(f"currently handling <{folder}>")
                 im_dir = os.path.join(DATA_DIR, folder)
                 files = list(os.walk(im_dir, topdown=False))[-1][-1]
                 folders_list += [os.path.join(im_dir, files[0])]
@@ -52,7 +53,14 @@ def process_data(DATA_DIR, OUTPUT_DIR):
         print("ERROR: Contains non-image files or inappropriate folders.")
         exit()
     except IndexError:
-        print("ERROR: Contains non-image files or inappropriate folders.")
+        print("ERROR: Contains non-image files or inappropriate folders. <<Index Error>>")
+        # This error could be caused by input folder format, the following is the correct format:
+        # Input Folder:
+        # -> time progressive dataset 1
+        # -> -> images...
+        # -> time progressive dataset 2
+        # -> -> images...
+        # ...
         exit()
     except UnidentifiedImageError:
         print("ERROR: Contains non-image files or inappropriate folders.")
@@ -75,7 +83,7 @@ def process_data(DATA_DIR, OUTPUT_DIR):
             X = np.zeros((len(im_list),) + desired_im_sz + (3,), np.uint8)
 
             for i, im_file in enumerate(im_list):
-                im = np.array(Image.open(im_file))
+                im = np.array(Image.open(im_file).convert('RGB'))
                 X[i, :im.shape[0], :im.shape[1]] = im
 
             hkl.dump(X, os.path.join(OUTPUT_DIR, 'X_' + split + '.hkl'))
@@ -96,8 +104,8 @@ def padding_shape(height, width):
     padding_width = padding_size(width)
     padding_shape_result = (padding_height, padding_width)
 
-    print('Before Padding：height:', height, ' width:', width)
-    print('After Padding ：height:', padding_height, ' width:', padding_width)
+    print('Before Padding: height:', height, ' width:', width)
+    print('After Padding: height:', padding_height, ' width:', padding_width)
 
     return padding_shape_result
 
