@@ -1,2 +1,2 @@
 .vscode/ linguist-generated=true
-.gitignore linguist-generated=true
+*.gitignore linguist-generated=true
