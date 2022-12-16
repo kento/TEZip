@@ -17,16 +17,22 @@ def process_data(DATA_DIR, OUTPUT_DIR):
         print("Please prepare at least two for tarin and val.")
         exit()
 
-    val_len = int(len(folders) / 10)
+    # If the validation data path is specified.
+    if args.val_dir_path is not None:
+        val_folders = [os.path.basename(i) for i in args.val_dir_path]
+        folders = list(set(folders) ^ set(val_folders))
 
-    if val_len < 1: val_len = 1
+    else:
+        val_len = int(len(folders) / 10)
 
-    val_folders = []
-    while len(val_folders) < val_len:
-        n = random.randint(0, len(folders) - 1)
-        if not n in val_folders:
-            val_folder = folders.pop(n)
-            val_folders.append(val_folder)
+        if val_len < 1: val_len = 1
+
+        val_folders = []
+        while len(val_folders) < val_len:
+            n = random.randint(0, len(folders) - 1)
+            if not n in val_folders:
+                val_folder = folders.pop(n)
+                val_folders.append(val_folder)
 
     splits['train'] = folders
     splits['val'] = val_folders
@@ -42,7 +48,7 @@ def process_data(DATA_DIR, OUTPUT_DIR):
                 folders_list += [os.path.join(im_dir, files[0])]
             for i, im_file in enumerate(folders_list):
                 im = np.array(Image.open(im_file))
-                
+
                 height_tmp = im.shape[0]
                 width_tmp = im.shape[1]
 
@@ -57,7 +63,7 @@ def process_data(DATA_DIR, OUTPUT_DIR):
     except UnidentifiedImageError:
         print("ERROR: Contains non-image files or inappropriate folders.")
         exit()
-    
+
     desired_im_sz = padding_shape(height, width)
 
     try:
@@ -113,6 +119,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='TRAIN_DATA_CREATE', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('data_dir', type=str, help='data dir')
     parser.add_argument('output_dir', type=str, help='output dir')
+    parser.add_argument('-v', '--val_dir_path', type=str, nargs='*', help='validation dir in data dir(Multiple can be specified)')
     args = parser.parse_args()
 
     if not os.path.exists(args.output_dir): os.mkdir(args.output_dir)
