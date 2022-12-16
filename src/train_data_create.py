@@ -75,7 +75,7 @@ def process_data(DATA_DIR, OUTPUT_DIR):
             X = np.zeros((len(im_list),) + desired_im_sz + (3,), np.uint8)
 
             for i, im_file in enumerate(im_list):
-                im = np.array(Image.open(im_file))
+                im = np.array(Image.open(im_file).convert('RGB'))
                 X[i, :im.shape[0], :im.shape[1]] = im
 
             hkl.dump(X, os.path.join(OUTPUT_DIR, 'X_' + split + '.hkl'))

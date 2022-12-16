@@ -45,7 +45,7 @@ def error_bound(origine, diff, mode, value, GPU_FLAG, xp):
 			E = rel_value
 	elif mode == "pwrel":
 		E = Bf * value[0] # Error abs
-	
+
 	Du = Df + E # Du: Upper error bound
 	Dl = Df - E # Dl: Lower error bound
 
@@ -53,12 +53,12 @@ def error_bound(origine, diff, mode, value, GPU_FLAG, xp):
 		Df = xp.asnumpy(Df)
 		Du = xp.asnumpy(Du)
 		Dl = xp.asnumpy(Dl)
-	
+
 	u = float(np.inf) # Temp upper error bound
 	l = -u # Temp lower error bound
 	head = 0
 	for i in range(len(Df)):
-		# if accumulated product(intersect) set becomes empty, 
+		# if accumulated product(intersect) set becomes empty,
 		if min((u, Du[i])) - max((l, Dl[i])) < 0.0: #
 			Df[head:i] = (u + l)/2 # compute a median [l, u]
 			u = float(np.inf) # reinit
@@ -75,7 +75,7 @@ def error_bound(origine, diff, mode, value, GPU_FLAG, xp):
 def finding_difference(arr):
     arr_f = arr.flatten()
     arr_f[1:] = arr_f[:-1] - arr_f[1:]
-		
+
     return arr_f.reshape(arr.shape)
 
 
@@ -88,7 +88,7 @@ def replacing_based_on_frequency(arr, table, xp):
 
 	for idx, num in enumerate(table):
 		result = xp.where(result == num, idx, result)
-	
+
 	return result
 
 
@@ -101,13 +101,24 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	if len(file_paths) == 0:
 		print("ERROR:", DATA_DIR, "is an empty or non-existent directory")
 		exit()
-	
+
 	try:
 		origine_img = np.array(Image.open(file_paths[0]))
+
+		image_mode = Image.open(file_paths[0]).mode
+		# if image is other than RGB and grayscale, exit()
+		if all([image_mode != 'RGB', image_mode != 'L']):
+			print("ERROR: input image is {0}. Only RGB and grayscale are supported.".format(image_mode))
+			exit()
+
+		# gray scale convert RGB
+		isRGB = image_mode == 'RGB' # Identify input image channel.
+		origine_img = np.array(Image.open(file_paths[0])) if isRGB else np.array(Image.open(file_paths[0]).convert('RGB'))
+
 		origine_img = origine_img[np.newaxis, np.newaxis, :, :, :]
 		files = [os.path.basename(file_paths[0])]
 		for path in file_paths[1:]:
-			img = np.array((Image.open(path)))
+			img = np.array((Image.open(path))) if isRGB else np.array((Image.open(path).convert('RGB')))
 			img = img[np.newaxis, np.newaxis, :, :, :]
 			origine_img = np.hstack([origine_img, img])
 			files.append(os.path.basename(path))
@@ -120,11 +131,12 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	except UnidentifiedImageError as e:
 		print(DATA_DIR, "contains files or folders that are not images.")
 		exit()
-	
+
 	with open(os.path.join(OUTPUT_DIR, 'filename.txt'), 'w', encoding='UTF-8') as f:
+		f.write(f"{int(isRGB)}\n") # Append rgb status to filename for later possible grayscale recovery.
 		for file_name in files:
 			f.write("%s\n" % file_name)
-	
+
 	X_test = origine_img.astype(np.float32) /255
 
 	batch_size = 10
@@ -161,7 +173,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	inputs = Input(shape=tuple(input_shape))
 	predictions = test_prednet(inputs)
 	test_model = Model(inputs=inputs, outputs=predictions)
-	
+
 	# 推論用に元画像にパディング
 	X_test_pad = data_padding(X_test)
 
@@ -218,7 +230,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 
 		X_hat_predict_one = X_hat[0, 1]
 		X_hat_predict_one = X_hat_predict_one[np.newaxis, np.newaxis, :, :, :]
-		
+
 		X_test_origine_one = origine_img[0, idx]
 		X_test_origine_one = X_test_origine_one[np.newaxis, np.newaxis, :, :, :]
 
@@ -231,11 +243,11 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 		else:
 			predict_stack_np = np.hstack([predict_stack_np, X_hat_predict_one])
 			origine_stack_np = np.hstack([origine_stack_np, X_test_origine_one])
-		
+
 		if idx >= key_idx:
 			stop_point = np.mean( (X_test_pad[:, key_idx:idx+1] - predict_stack_np[:, 1:])**2 )
 			if VERBOSE: print("MSE:", stop_point)
-		
+
 		if (THRESHOLD != None and stop_point > THRESHOLD) or (WINDOW_SIZE != None and (idx - PREPROCESS) % WINDOW_SIZE == 0):
 			if VERBOSE: print("move key point")
 			origine_result = origine_stack_np[:, :-1]
@@ -307,14 +319,14 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 				start = time.time()
 				for channel in range(3):
 					difference[:,img_num, :, :, channel] = error_bound(X_test_1[:,img_num, :, :, channel], difference[:,img_num, :, :, channel], MODE, BOUND_VALUE, GPU_FLAG, xp)
-				
+
 				elapsed_time = time.time() - start
 				error_bound_time = error_bound_time + elapsed_time
-				
+
 		difference_list.append(difference)
-	
+
 	if VERBOSE: print ("error_bound:{0}".format(error_bound_time) + "[sec]")
-	
+
 	# 推論結果をまとめる　GPU&pwrelの場合はこの段階でcupyに切り替わる
 	difference_model = difference_list[0]
 	for X_hat_np in difference_list[1:]:
@@ -388,5 +400,4 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 	data=zstd.compress(result_difference_str, 9)
 	with open(os.path.join(OUTPUT_DIR, "entropy.dat"), mode='wb') as f:
 		f.write(data)
-	
-	
+
