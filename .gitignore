@@ -1,3 +1,4 @@
 docs/_build/
 .vscode/
 src/__pycache__/
+.gitignore
