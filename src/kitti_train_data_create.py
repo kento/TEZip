@@ -3,6 +3,7 @@ Code for downloading and processing KITTI data (Geiger et al. 2013, http://www.c
 '''
 
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
 import urllib.request
@@ -25,11 +26,25 @@ val_recordings = [('city', '2011_09_26_drive_0005_sync')]
 
 # Download raw zip files by scraping KITTI website
 def download_data(DATA_DIR):
+    # login
+    session = requests.session()
+
+    login_url = "https://www.cvlibs.net/datasets/kitti/user_login_check.php"
+    USER = args.download[0]
+    PASS = args.download[1]
+
+    login_data = {
+        'email':USER ,
+        'password':PASS ,
+        }
+    login = session.post(login_url, data=login_data)
+    
+    # scraping
     base_dir = os.path.join(DATA_DIR, 'raw/')
     if not os.path.exists(base_dir): os.mkdir(base_dir)
     for c in categories:
         url = "http://www.cvlibs.net/datasets/kitti/raw_data.php?type=" + c
-        r = requests.get(url)
+        r = session.get(url)
         soup = BeautifulSoup(r.content)
         drive_list = soup.find_all("h3")
         drive_list = [d.text[:d.text.find(' ')] for d in drive_list]
@@ -40,6 +55,7 @@ def download_data(DATA_DIR):
             print( str(i+1) + '/' + str(len(drive_list)) + ": " + d)
             url = "https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/" + d + "/" + d + "_sync.zip"
             urllib.request.urlretrieve(url, filename=c_dir + d + "_sync.zip")
+            time.sleep(2)
 
 
 # unzip images
@@ -130,13 +146,14 @@ def process_im(im, desired_sz):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='PROG', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('data_dir', type=str, help='data dir')
-    parser.add_argument('-d', '--download', action='store_true')
+    parser.add_argument('-d', '--download', nargs=2, metavar=('kitti site email adress', 'kitti site password'))
     parser.add_argument('-p', '--process_data', action='store_true')
+
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir): os.mkdir(args.data_dir)
 
-    if args.download:
+    if args.download != None:
         print('downloading images')
         download_data(args.data_dir)
         print('unzip images')
@@ -146,6 +163,6 @@ if __name__ == '__main__':
         print('data processing')
         process_data(args.data_dir)
     
-    if not args.download and not args.process_data:
+    if  (args.download == None) and not args.process_data:
         print("If you want to download kitti data, flag it as -d or --download.")
         print("If you want to compress data to hkl, flag it as -p or --process_data.")
