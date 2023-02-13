@@ -364,6 +364,22 @@ This system uses "Pillow" for loading images, which supports the following image
 
 For more information about all the formats supported by Pillow, please refer to `the Pillow documentation page  <https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html>`_
 
+Supported image modes
+''''''''''''''''''''''''''''''
+
+Supported image modes differ between the learning mechanism and the compression/decompression mechanism, and are as follows.
+
+**learning mechanism**
+
+* All formats supported by Pillow (details can be found on the `Pillow documentation page <https://pillow.readthedocs.io/en/stable/handbook/concepts.html>`_)
+
+**compression/decompression mechanism**
+
+* RGB
+* Gray Scale
+
+As a point of caution, it is internally processed as an image in RGB mode. In other words, the learning mechanism first converts the image to RGB mode. The compression/decompression mechanism converts to RGB mode before compression and restores the original image mode after decompression.
+
 Learning data creation program
 ''''''''''''''''''''''''''''''''
 
@@ -425,7 +441,8 @@ The meaning of each argument is as follows
    :widths: 10, 25, 15
    
    "First parameter", The directory path containing the training images to be dumped into the Hkl file. ,"./data"
-   "Second parameter", Directory path to output Hkl file ,"./data_hkl"
+   "Second parameter", Directory path to output Hkl file. ,"./data_hkl"
+   "-v", "| Specifies the path of the directory used for verification among the directories specified in the first argument.Without this option, randomly determined. ", "-v ./data/sequence_1"
    
 As an execution example, the following command is used to dump to hkl.
 
@@ -664,10 +681,14 @@ Based on PredNet's training data creation program, it dumps a large number of im
 System Overview
 ....................................
 
-The learning data creation program consists of the following two blocks
+The learning data creation program consists of the following three blocks
 
+* Login to the kitti site
 * Downloading and decompression of image data
 * Dumping the data (converted to hkl files)
+
+Downloading the kitti dataset requires registration on the `kitti site <https://www.cvlibs.net/datasets/kitti/user_register.php>`_. Please register as a user in advance.
+When running the program, you need to specify the email address and password you used when registering.
 
 Downloading the data requires about 200GB of space. The breakdown is 165 GB for the zip file immediately after downloading, and 30 GB after unzipping.
 Dumping the data requires 42128 images of size 1248×376 to be stored in memory if the data is run as it is after downloading. Depending on the environment, the following error may occur due to insufficient memory.
@@ -725,23 +746,24 @@ Execute the following command.
 
 .. code-block:: sh
 
-   python kitti_train_data_create.py Output directory -d -p
+   python kitti_train_data_create.py Output directory -d <e-mail address> <password> -p
 
 The meaning of each argument is shown in the table below.
 
 .. csv-table::
-    :header: Argument, Meaning, Configuration example
-    :widths: 15, 25, 15
+    :header: Argument name, Argument Meaning,Number of inputs, Input Meaning, example
+    :widths: 10, 15, 10, 25, 15
    
-    First quotation,Directory path to output Hkl file,./data
-    -d,Flag to download the Kitti data set,-d
-    -p,Flag for processing a group of image data to change to hkl.The output directory of -d and the input/output directory of -p are common,-p
+   First quotation,Directory path to output Hkl file, \-, \-, ./data
+   -d,Flag to download the Kitti data set, 2, "| 1：Email address registered on the kitti site
+   | 2：password registered on the kitti site", -d tezip@tezip.com nfoe2fjep233af
+   -p,Flag for processing a group of image data to change to hkl.The output directory of -d and the input/output directory of -p are common,0, \-,-p
 
 As an execution example, if you want to download the data and dump it directly to hkl, you can use the following command.
 
 .. code-block:: sh
 
-   python kitti_train_data_create.py ./data -d -p
+   python kitti_train_data_create.py ./data -d tezip@tezip.com nfoe2fjep233af -p
 
 Output file
 ..........................
@@ -1093,9 +1115,9 @@ For absolute error, the value entered for "-b" is used as is to determine the to
 relative bound ratio
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The relative bound ratio determines the absolute value of the error (absolute error), then the maximum and minimum values. The maximum value minus the minimum value is then multiplied by the multiplier entered in "-b" to obtain the tolerance. The following is a formula of this content.
+In the relative bound ratio, first find the error (absolute error), then find the maximum and minimum values of the original image. The maximum value minus the minimum value is then multiplied by the multiplier entered in "-b" to obtain the tolerance. The following is a formula of this content.
 
-.. math::　Tolerance level = (Maximum value of error – Minimum value of error) × Magnification
+.. math::　Tolerance level = (Maximum value of original image – Minimum value of original image) × Magnification
 
 The following figure shows an illustration of the relative bound ratio.
 
