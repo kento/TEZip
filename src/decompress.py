@@ -40,6 +40,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, GPU_FLAG, VERBOSE):
 	if not os.path.exists(OUTPUT_DIR): os.mkdir(OUTPUT_DIR)
 	
 	batch_size = 10
+	isRGB = True
 
 	weights_file = os.path.join(WEIGHTS_DIR, 'prednet_weights.hdf5')
 	json_file = os.path.join(WEIGHTS_DIR, 'prednet_model.json')
@@ -50,6 +51,9 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, GPU_FLAG, VERBOSE):
 	except FileNotFoundError as e:
 		print("ERROR:No such file or directory:", os.path.join(DATA_DIR, 'filename.txt'))
 		exit()
+
+	if (file_names[0].isdigit and len(file_names[0]) == 1):
+		isRGB = bool(int(file_names.pop(0))) # Remove the RGB Status if there is one.
 
 	# Load trained model
 	try:
@@ -264,5 +268,12 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, GPU_FLAG, VERBOSE):
 			tmp_np = decompress[i,j,:,:,:]
 			tmp_np = tmp_np.astype('uint8')
 			tmp_image = Image.fromarray(tmp_np)
+
+			if isRGB: # Convert image back to grayscale when necessary.
+				if count==0: print("save as RGB")
+				tmp_image.save(os.path.join(OUTPUT_DIR, file_names[count]))
+			else:
+				if count==0: print("save as gray")
+				tmp_image.convert("L").save(os.path.join(OUTPUT_DIR, file_names[count]))
 			tmp_image.save(os.path.join(OUTPUT_DIR, file_names[count]))
 			count += 1

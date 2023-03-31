@@ -102,10 +102,21 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 
 	try:
 		origine_img = np.array(Image.open(file_paths[0]))
+
+		image_mode = Image.open(file_paths[0]).mode
+		# if image is other than RGB and grayscale, exit()
+		if all([image_mode != 'RGB', image_mode != 'L']):
+			print("ERROR: input image is {0}. Only RGB and grayscale are supported.".format(image_mode))
+			exit()
+
+		# gray scale convert RGB
+		isRGB = image_mode == 'RGB' # Identify input image channel.
+		origine_img = np.array(Image.open(file_paths[0])) if isRGB else np.array(Image.open(file_paths[0]).convert('RGB'))
+
 		origine_img = origine_img[np.newaxis, np.newaxis, :, :, :]
 		files = [os.path.basename(file_paths[0])]
 		for path in file_paths[1:]:
-			img = np.array((Image.open(path)))
+			img = np.array((Image.open(path))) if isRGB else np.array((Image.open(path).convert('RGB')))
 			img = img[np.newaxis, np.newaxis, :, :, :]
 			origine_img = np.hstack([origine_img, img])
 			files.append(os.path.basename(path))
@@ -120,6 +131,7 @@ def run(WEIGHTS_DIR, DATA_DIR, OUTPUT_DIR, PREPROCESS, WINDOW_SIZE, THRESHOLD, M
 		exit()
 
 	with open(os.path.join(OUTPUT_DIR, 'filename.txt'), 'w', encoding='UTF-8') as f:
+		f.write(f"{int(isRGB)}\n") # Append rgb status to filename for later possible grayscale recovery.
 		for file_name in files:
 			f.write("%s\n" % file_name)
 
