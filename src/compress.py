@@ -44,6 +44,10 @@ def error_bound(origine, diff, mode, value, GPU_FLAG, xp):
 	elif mode == "pwrel":
 		E = Bf * value[0] # Error abs
 
+	# If E is a decimal, the tolerance range will be a decimal.
+	# And quantization will not be handled properly, so round down.
+	E = xp.floor(E)
+
 	Du = Df + E # Du: Upper error bound
 	Dl = Df - E # Dl: Lower error bound
 
